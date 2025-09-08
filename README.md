@@ -9,7 +9,7 @@ Additional scripts relating to HR-IMC's performance assessment and application w
 
 
 ## Overview
-Here we provide a python script designed for processing high-resolution Imaging Mass Cytometry (IMC) data. It applies Richardson-Lucy deconvolution with a custom PSF to improve image resolution to 333 nm. The script takes oversampled multi-layer TIFF images as input, processes them layer by layer, and outputs the enhanced images.
+Here we provide a python script designed for processing high-resolution Imaging Mass Cytometry (IMC) data. It applies Richardson-Lucy deconvolution with a custom PSF to improve image resolution to 333 nm. The script takes oversampled multi-layer TIFF images as input, processes them layer by layer, and outputs the enhanced images. If the user has generated oversampled data for 500 nm resolution, this can be specified using the `resolution = 500` argument.
 
 ## System Requirements
 - **Operating System**: Linux or macOS (Windows may work but is untested)
@@ -37,7 +37,7 @@ On a standard desktop computer, installation should take approximately 5-10 minu
 
 ## Instructions to Run on Demo Data
 
-The test image contains several nuclei measured with two channels (ATP5A & Iridium) to visualize mitochondria and nuclei. The expected output can be downloaded for visual comparison. 
+The test image contains a zoom-in of smooth muscle actin fibres captured with our oversampling technique. Our deconvolution pipeline acts to recover fine sub-micron structural details. We visualise Histone H3 (nuclear), SMA and ATP5A (mitochondrial) markers. The expected output can be downloaded for visual comparison. 
 
 1. **Download the test image (Demo.tif)**: Ensure you have a directory containing `.tif` files.
 2. **Modify the script's input and output directory paths**:
@@ -47,12 +47,30 @@ The test image contains several nuclei measured with two channels (ATP5A & Iridi
    ```
 3. **Run the script**:
    ```sh
-   python RLD_HRIMC_circle.py
+   python HR_IMC_final_function.py
    ```
 
-Expected Run Time: **5-10 minutes**
+Expected Run Time: **less than a minute**
 
+*The same instructions apply to run this script on your own data set. Keep in mind that large datasets (~1000 images) can take several hours to run, depending on hardware capabilities. The iteration number can be altered to refine data (<20 recommended)*
 
-_The same instructions apply to run this script on your own data set. Keep in mind that large datasets (~1000 images) can take several hours to run, depending on hardware capabilities_
+## License information
 
+*MIT License  
+Copyright (c) 2025 [Bodenmiller lab]  
+Permission is hereby granted, free of charge, to any person obtaining a copy  
+of this software and associated documentation files (the "Software"), to deal  
+in the Software without restriction, including without limitation the rights  
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell  
+copies of the Software, and to permit persons to whom the Software is  
+furnished to do so, subject to the following conditions:  
+The above copyright notice and this permission notice shall be included in all  
+copies or substantial portions of the Software.  
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR  
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,  
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE  
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER  
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,  
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE  
+SOFTWARE.*
 
