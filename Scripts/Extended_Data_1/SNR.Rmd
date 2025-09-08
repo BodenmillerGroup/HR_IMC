@@ -1,0 +1,200 @@
+---
+title: "Shrimp"
+author: "Alina Bollhagen"
+date: "2024-09-13"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r load libraries}
+
+library(EBImage)
+library(reshape2)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(hrbrthemes)
+library(tidyverse)
+library(ggrepel)
+library(cytomapper)
+
+```
+
+```{r read in data}
+
+list <- list.files("/mnt/central_nas/projects/Pladioc/SRIMC_project/img_signal_loss/")
+
+all_channels <- lapply(list,function(x) readImage(paste0("/mnt/central_nas/projects/Pladioc/SRIMC_project/img_signal_loss/", x)))
+
+```
+
+```{r extract intensities}
+
+intensities <- vapply(all_channels, function(x) sum(imageData(x)[,,37]), numeric(1))
+
+data <- data.frame(c(intensities[1:2],rep(0,8)),
+                   c(intensities[3:5], rep(0,7)),
+                   c(intensities[6:8], rep(0,7)),
+                   c(intensities[9:12], rep(0,6)),
+                   c(intensities[14:19], intensities[27:29],0),
+                   c(intensities[20:26], intensities[30:31],0),
+                   c(intensities[32:34], rep(0,7)))
+
+data <- t(data)
+rownames(data) <-c(0,-1,-2,-5,-10,-15,-20)
+colnames(data) <- 1:10
+
+data <- melt(data)
+
+colnames(data) <- c("dB", "pass", "Intensity")
+data$dB <- as.factor(data$dB)
+
+```
+
+```{r plotting}
+
+to_plot <- data[which(data$dB != "-5" & data$dB != "-2"),]
+test <- data[which(data$dB == "-15"),]
+
+ggplot(to_plot, aes(x = pass, y = Intensity, col = dB, fill = dB)) +
+  geom_point(shape=21, color="black", size = 4, alpha = 0.7) +
+  geom_smooth(data = to_plot[which(to_plot$dB %in% c("-10", "-15", "-20")),],
+              method = "nls", 
+              formula = y ~ I0 / (1 + exp((x - x0))), 
+              method.args = list(start = list(I0 = max(to_plot$Intensity), x0 = median(to_plot$pass))),
+              se = FALSE) +
+  geom_smooth(data = to_plot[which(to_plot$dB %in% c("0", "-1")),],
+              method = "lm", formula = y ~ exp(-x), se = FALSE) +
+  scale_fill_manual(values = c("grey70", "#F5B35E", "#EA7246", "#DD708E", "#33608C")) +
+  scale_color_manual(values = c("grey70", "#F5B35E", "#EA7246", "#DD708E", "#33608C")) +
+  theme(panel.border = element_rect(colour = "black", fill=NA, size=1),
+        panel.background = element_blank(),
+        panel.grid.minor = element_line(colour="grey95", size=0.5),
+        text = element_text(size = 15))
+
+ggplot(test, aes(x = pass, y = Intensity, col = dB, fill = dB)) +
+  geom_point(shape=21, color="black", size = 4, alpha = 0.7) +
+  geom_smooth(method = "gam", formula = y ~ exp(-0.1*x), se = FALSE) +
+  scale_fill_manual(values = c("#ba7e7e", "#e7c28e", "#204a77", "#cdcdd7", "darkgrey")) +
+  scale_color_manual(values = c("#ba7e7e", "#e7c28e", "#204a77", "#cdcdd7", "darkgrey")) +
+  theme(panel.border = element_rect(colour = "black", fill=NA, size=1),
+        panel.background = element_blank(),
+        panel.grid.minor = element_line(colour="grey95", size=0.5),
+        text = element_text(size = 15))
+
+```
+
+```{r Ablation Time vs. Resolution}
+
+time <- data.frame(c(1000, 750, 500, 333, 200, 100),
+                   c(20.83, 37.04, 83.3, 187.5, 520.83, 2083.3),
+                   c(0.347, 0.62, 1.39, 3.125, 8.68, 34.7))
+
+colnames(time) <- c("Resolution", "min", "h")
+
+ggplot(time, aes(x = Resolution, y = min)) +
+  geom_point(shape=21, color="black", size = 4, alpha = 0.7, fill = "#204a77") +
+  geom_smooth(method = "glm", formula = y ~ exp(-x), se = FALSE, color = "#204a77") +
+  theme(panel.border = element_rect(colour = "black", fill=NA, size=1),
+        panel.background = element_blank(),
+        panel.grid.minor = element_line(colour="grey95", size=0.5),
+        text = element_text(size = 15))
+
+```
+
+```{r signal to noise ratio}
+
+images <- loadImages("/mnt/central_nas/projects/Pladioc/SRIMC_project/tonsil/tonsil_images_500x500/")
+
+channelNames(images) <- c("MPO", "Xe", "ECad", "CCR7", "Vimentin", "HLADR", "CD27",
+                          "CD303", "CD68", "CD11b", "CD20", "CD56", "GranzymeB",
+                          "CD3", "LMAP3", "CD11c", "PD1", "GITR", "CD14", "PDL1", 
+                          "TCF7", "CD45", "FOXP3", "ICOS", "Ki67", "CD8", "Tim3",
+                          "IRF4", "VISTA", "CD1c", "CD4", "CD31", "CXCL12", "CCL21",
+                          "CXCL13", "DNA1", "DNA2", "CD15")
+
+# Store patient and image level information in elementMetadata
+mcols(images) <- DataFrame(image = names(images))
+
+cur <- lapply(names(images), function(x){
+    img <- images[[x]]
+    mat <- apply(img, 3, function(ch){
+        # Otsu threshold
+        thres <- otsu(ch, range = c(min(ch), max(ch)), levels = 65536)
+
+        snr <- mean(ch[ch > thres]) / mean(ch[ch <= thres])
+        ps <- mean(ch[ch > thres])
+        ts <- sum(ch[ch > thres])
+        
+        return(c(snr = snr, ps = ps, ts = ts))
+    })
+    t(mat) %>% as.data.frame() %>% 
+        dplyr::mutate(image = x,
+               marker = colnames(mat)) %>% 
+        pivot_longer(cols = c(snr, ps, ts))
+})
+
+cur_snr <- do.call(rbind, cur)
+cur_snr$resolution <- c(rep("1000", 114), rep("200", 114), rep("300", 114), rep("500", 114))
+
+data <- cur_snr %>% 
+    pivot_wider(names_from = name, values_from = value) %>%
+    dplyr::filter(ps > 2) %>%
+    pivot_longer(cols = c(snr, ps))
+
+data <- data %>% 
+    dplyr::group_by(marker, name, resolution) %>%
+    dplyr::summarize(log_mean = log2(mean(value))) %>%
+    pivot_wider(names_from = name, values_from = log_mean)
+
+markers <- data$marker[which(data$resolution == "300")]
+markers <- c("Vimentin", "CD4", "CD11b", "CD8", "FOXP3", "HLADR", "CD31", "CD20", "CD11c", "CD1c", "DNA2")
+
+
+input <- data[which(data$marker %in% markers),]
+input$resolution <- factor(input$resolution, levels = c("1000", "500", "300", "200"))
+  
+ggplot(input, aes(ps, snr)) +
+    geom_point(aes(ps, snr, col = resolution)) +
+    geom_label_repel(aes(ps, snr, label = marker, col = resolution)) +
+  scale_color_manual(values = c("#33608C", "#DD708E", "#EA7246", "#F5B35E")) +
+    ylab("Signal-to-noise ratio [log2]") +
+    xlab("Signal intensity [log2]") +
+  #xlim(c(0,10)) +
+  #ylim(c(0.5,5)) +
+  #geom_encircle(data = subset(input, resolution == "1000"), color = NA, fill = alpha("#33608C", 0.1),
+                #s_shape = 0.5) +
+  #geom_encircle(data = subset(input, resolution == "500"), color = NA, fill = alpha("#DD708E", 0.1),
+                #s_shape = 0.5) +
+  #geom_encircle(data = subset(input, resolution == "300"), color = NA, fill = alpha("#EA7246", 0.1),
+                #s_shape = 0.5) +
+  #geom_encircle(data = subset(input, resolution == "200"), color = NA, fill = alpha("#F5B35E", 0.1),
+                #s_shape = 0.5) +
+  theme(panel.grid = element_blank(),
+        panel.border = element_rect(color = "black", fill = NA, size = 1),
+        panel.background = element_rect(fill = "white")) 
+
+
+input_2 <- cur_snr[which(cur_snr$marker == "DNA2"),]
+input_2$resolution <- factor(input_2$resolution, levels = c("1000", "500", "300", "200"))
+
+ggplot(input_2, aes(x = resolution, y = value, fill = resolution, col = resolution)) +
+  scale_fill_manual(values = c(alpha("#33608C", 0.5), alpha("#DD708E", 0.5), alpha("#EA7246", 0.5),
+                               alpha("#F5B35E", 0.5))) +
+  scale_color_manual(values = c("#33608C",  "#DD708E", "#EA7246", "#F5B35E")) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.7) +
+  facet_wrap(~ name, scales = "free_y",
+             labeller = labeller(name = c("ps" = "mean pixel intensity",
+                                          "snr" = "signal-to-noise",
+                                          "ts" = "sum pixel intensity"))) +
+  theme(panel.grid = element_blank(),
+        panel.border = element_rect(color = "black", fill = NA, size = 1),
+        panel.background = element_rect(fill = "white")) 
+
+```
+
+
+
+

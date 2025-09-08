@@ -1,0 +1,586 @@
+---
+title: "Untitled"
+output: html_document
+date: "2025-03-17"
+editor_options: 
+  chunk_output_type: console
+---
+
+---
+title: "Untitled"
+author: "Alina Bollhagen"
+date: "2024-09-23"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r load libraries - RUN}
+
+library(imcRtools)
+library(CATALYST)
+library(dittoSeq)
+library(scater)
+library(ComplexHeatmap)
+library(igraph)
+library(edgeR)
+library(circlize)
+library(tidyr)
+library(dplyr)
+library(ggraph)
+library(scales)
+library(paletteer)
+library(CATALYST)
+library(ComplexHeatmap)
+library(circlize)
+library(cluster)
+library(bluster)
+library(clusterSim)
+
+```
+
+Data after segmentation is stored in the form of a Single Cell Experiment (SCE) object with rows corresponding to markers and columns representing individual pixels. Information about which pixel belongs to which cell is stored in the ColData of the SCE object along with treatment and image information.
+
+```{r Read in data - RUN}
+
+#high-resolution
+sce_hr <- readRDS("/mnt/central_nas/projects/Pladioc/SRIMC_project/Zenodo/Figure_3/sce_corrected.RDS")
+
+#low-resolution
+sce_lr <- readRDS("/mnt/central_nas/projects/Pladioc/SRIMC_project/Zenodo/Figure_3/sce_convolved_after_corrected.RDS")
+
+
+sce_hr$condition <- "DMSO"
+sce_hr$condition[which(sce_hr$image %in% c("20240923_JWAB_ExVivo_B76_Carboplatin_001", 
+                                     "20240923_JWAB_ExVivo_B76_Carboplatin_002",
+                                     "20240923_JWAB_ExVivo_B76_Carboplatin_003",
+                                     "20240923_JWAB_ExVivo_B76_Carboplatin_004"))] <- "C"
+sce_hr$condition[which(sce_hr$image %in% c("20240923_JWAB_ExVivo_B76_control_001", 
+                                     "20240923_JWAB_ExVivo_B76_control_002",
+                                     "20240923_JWAB_ExVivo_B76_control_003",
+                                     "20240923_JWAB_ExVivo_B76_control_004"))] <- "CP"
+
+rownames(sce_hr) <- c("cC3", "Xe", "panCK", "H3", "Vimentin", "MUC16", "Nestin", "GLUT1", "SMA", "GSTP1",
+                   "p53", "CD20", "Ki67", "HSP70", "CD3", "Bcl2", "Erk", "ATP5A", "pH2AX", "pATM",
+                   "HSP10", "Survivin", "TUBB3", "LRP", "Mesothelin", "CD45", "bCatenin",
+                   "CD68", "H4K12Ac", "CAIX", "H3K4me2", "ERCC1", "CD31", "ECad", "Actin",
+                   "pRb", "HSP27", "DNA1", "DNA2", "Pt195", "Pt196", "Pt198")
+
+assay(sce_hr, "exprs") <- asinh(assay(sce_hr, "counts"))
+assay(sce_hr, "scaled") <- t(scale(t(assay(sce_hr, "exprs"))))
+
+norm_counts <- t(apply(assay(sce_hr, "counts"), 1, function(x)(x-min(x))/(quantile(x, 0.99)-min(x))))
+norm_counts <- t(apply(norm_counts, 1, function(x) pmin(x, 1)))
+assay(sce_hr, "normalized", withDimnames = FALSE) <- norm_counts
+
+colnames(sce_hr) <- paste0('pixel', seq_len(ncol(sce_hr)))
+
+
+sce_lr$condition <- "DMSO"
+sce_lr$condition[which(sce_lr$image %in% c("20240923_JWAB_ExVivo_B76_Carboplatin_001", 
+                                     "20240923_JWAB_ExVivo_B76_Carboplatin_002",
+                                     "20240923_JWAB_ExVivo_B76_Carboplatin_003",
+                                     "20240923_JWAB_ExVivo_B76_Carboplatin_004"))] <- "C"
+sce_lr$condition[which(sce_lr$image %in% c("20240923_JWAB_ExVivo_B76_control_001", 
+                                     "20240923_JWAB_ExVivo_B76_control_002",
+                                     "20240923_JWAB_ExVivo_B76_control_003",
+                                     "20240923_JWAB_ExVivo_B76_control_004"))] <- "CP"
+
+rownames(sce_lr) <- c("cC3", "Xe", "panCK", "H3", "Vimentin", "MUC16", "Nestin", "GLUT1", "SMA", "GSTP1",
+                   "p53", "CD20", "Ki67", "HSP70", "CD3", "Bcl2", "Erk", "ATP5A", "pH2AX", "pATM",
+                   "HSP10", "Survivin", "TUBB3", "LRP", "Mesothelin", "CD45", "bCatenin",
+                   "CD68", "H4K12Ac", "CAIX", "H3K4me2", "ERCC1", "CD31", "ECad", "Actin",
+                   "pRb", "HSP27", "DNA1", "DNA2", "Pt195", "Pt196", "Pt198")
+
+assay(sce_lr, "exprs") <- asinh(assay(sce_lr, "counts"))
+assay(sce_lr, "scaled") <- t(scale(t(assay(sce_lr, "exprs"))))
+
+norm_counts <- t(apply(assay(sce_lr, "counts"), 1, function(x)(x-min(x))/(quantile(x, 0.99)-min(x))))
+norm_counts <- t(apply(norm_counts, 1, function(x) pmin(x, 1)))
+assay(sce_lr, "normalized", withDimnames = FALSE) <- norm_counts
+
+colnames(sce_lr) <- paste0('pixel', seq_len(ncol(sce_lr)))
+
+```
+
+```{r quality control - RUN}
+
+# generating a cell-level sce object
+sce_cells <- aggregateAcrossCells(sce_hr, ids = sce_hr$cell, statistics = "mean", use.assay.type = "counts")
+assay(sce_cells, "exprs") <- asinh(assay(sce_cells, "counts"))
+assay(sce_cells, "scaled") <- t(scale(t(assay(sce_cells, "exprs"))))
+sce_cells$Area <- data.frame(table(sce_hr$cell))$Freq
+
+# removing too small and too big cells
+cell_remove <- colnames(sce_cells[,which(sce_cells$Area < 500 | sce_cells$Area > 5000)])
+sce_cells <- sce_cells[, !colnames(sce_cells) %in% cell_remove]
+sce_hr <- sce_hr[, !sce_hr$cell %in% cell_remove]
+
+sce_hr$Area <- sce_cells$Area[match(sce_hr$cell, colnames(sce_cells))]
+
+
+# generating a cell-level sce object
+sce_cells <- aggregateAcrossCells(sce_lr, ids = sce_lr$cell, statistics = "mean", use.assay.type = "counts")
+assay(sce_cells, "exprs") <- asinh(assay(sce_cells, "counts"))
+assay(sce_cells, "scaled") <- t(scale(t(assay(sce_cells, "exprs"))))
+sce_cells$Area <- data.frame(table(sce_lr$cell))$Freq
+
+# removing too small and too big cells
+cell_remove <- colnames(sce_cells[,which(sce_cells$Area < 500/9 | sce_cells$Area > 5000/9)])
+sce_cells <- sce_cells[, !colnames(sce_cells) %in% cell_remove]
+sce_lr <- sce_lr[, !sce_lr$cell %in% cell_remove]
+
+sce_lr$Area <- sce_cells$Area[match(sce_lr$cell, colnames(sce_cells))]
+
+sce_hr <- sce_hr[,which(sce_hr$condition != "C")]
+sce_lr <- sce_lr[,which(sce_lr$condition != "C")]
+```
+
+```{r flowSOM clustering - high-resolution - RUN}
+
+markers <- c("H3", "p53", "Ki67", "pH2AX", "pATM", "Survivin", "bCatenin",
+             "H4K12Ac", "H3K4me2","pRb", "DNA1", "DNA2", "MUC16", "GLUT1",
+             "GSTP1","HSP70", "ATP5A","HSP10", "TUBB3", "LRP", "Mesothelin",
+             "ERCC1", "ECad","HSP27", "cC3")
+
+assay(sce_hr, "logcounts") <- assay(sce_hr, "exprs")
+assay(sce_hr, "exprs") <- assay(sce_hr, "normalized")
+
+# Run FlowSOM and ConsensusClusterPlus clustering
+set.seed(1262)
+sce_hr <- CATALYST::cluster(sce_hr, features = markers, maxK = 30)
+assay(sce_hr, "exprs") <- assay(sce_hr, "logcounts")
+
+# Assess cluster stability
+delta_area(sce_hr)
+
+# Assign clusters to sce object
+set.seed(1234)
+sce_hr$som_cluster <- cluster_ids(sce_hr, "meta13")
+
+sce_mean <- aggregateAcrossCells(sce_hr, ids = sce_hr$som_cluster, statistics = "mean", use.assay.type = "counts")
+assay(sce_mean, "exprs") <- asinh(assay(sce_mean, "counts"))
+assay(sce_mean, "scaled") <- t(scale(t(assay(sce_mean, "exprs"))))
+
+# Figure 3
+my_palette <- colorRamp2(c(-2.5, 0, 2.5), c("#204a77", "white", "#CA3B43"))
+Heatmap(t(assay(sce_mean, "scaled")[c(markers),]),
+        col = my_palette,
+        column_names_rot = 90,
+        border = TRUE,
+        row_split = c(2,2,1,1,1,1,2,2,2,1,2,2,2),
+        row_order = c(5,4,6,10,3,2,1,11,13,12,7,9,8),
+        column_split = c(1,1,1,1,1,1,1,1,1,1,1,1,2,2,2,2,2,2,2,2,2,1,2,2,1),
+        column_order = c(6,10,8,3,4,11,12,9,5,1,2,22,7,25,18,17,16,15,19,24,14,23,20,21,13)) 
+```
+
+```{r flowSOM clustering - low-resolution - RUN}
+
+markers <- c("H3", "p53", "Ki67", "pH2AX", "pATM", "Survivin", "bCatenin",
+             "H4K12Ac", "H3K4me2","pRb", "DNA1", "DNA2", "MUC16", "GLUT1",
+             "GSTP1","HSP70", "ATP5A","HSP10", "TUBB3", "LRP", "Mesothelin",
+             "ERCC1", "ECad","HSP27", "cC3")
+
+assay(sce_lr, "logcounts") <- assay(sce_lr, "exprs")
+assay(sce_lr, "exprs") <- assay(sce_lr, "normalized")
+
+# Run FlowSOM and ConsensusClusterPlus clustering
+set.seed(1262)
+sce_lr <- CATALYST::cluster(sce_lr, features = markers, maxK = 30)
+assay(sce_lr, "exprs") <- assay(sce_lr, "logcounts")
+
+# Assign clusters to sce object
+set.seed(1234)
+sce_lr$som_cluster <- cluster_ids(sce_lr, "meta13")
+sce_lr$som_cluster <- cluster_ids(sce_lr, "meta13")
+
+sce_mean <- aggregateAcrossCells(sce_lr, ids = sce_lr$som_cluster, statistics = "mean", use.assay.type = "counts")
+assay(sce_mean, "exprs") <- asinh(assay(sce_mean, "counts"))
+assay(sce_mean, "scaled") <- t(scale(t(assay(sce_mean, "exprs"))))
+
+# Figure 2
+my_palette <- colorRamp2(c(-2.5, 0, 2.5), c("#204a77", "white", "#CA3B43"))
+Heatmap(t(assay(sce_mean, "scaled")[c(markers),]),
+        col = my_palette,
+        column_names_rot = 90,
+        border = TRUE,
+        column_split = c(2,2,2,2,2,2,2,2,2,2,2,2,1,1,1,1,1,1,1,1,1,2,1,1,2), 
+        row_split = c(1,1,1,1,1,1,1,2,2,1,2,2,2),
+        column_order = c(6,10,8,3,4,11,12,9,5,1,2,22,7,25,18,17,16,15,19,24,14,23,20,21,13)) 
+```
+
+```{r saving rds}
+
+saveRDS(sce_hr, "/mnt/central_nas/projects/Pladioc/SRIMC_project/Zenodo/Figure_3/sce_hr_SOMclusters.RDS")
+saveRDS(sce_lr, "/mnt/central_nas/projects/Pladioc/SRIMC_project/Zenodo/Figure_3/sce_lr_SOMclusters.RDS")
+
+sce_hr <- readRDS("/mnt/central_nas/projects/Pladioc/SRIMC_project/Zenodo/Figure_3/sce_hr_SOMclusters.RDS")
+sce_lr <- readRDS("/mnt/central_nas/projects/Pladioc/SRIMC_project/Zenodo/Figure_3/sce_lr_SOMclusters.RDS")
+
+```
+
+```{r Visualization of subcellular clusters - RUN}
+
+# Figure 2
+plotSpatial(sce_hr[,which(sce_hr$image == "20240923_JWAB_ExVivo_B76_DMSO_003" &
+                               sce_hr$Center_X > 250 & sce_hr$Center_X < 450 &
+                               sce_hr$Center_Y > 500 
+                               )],
+            img_id = "image",
+            coords = c("Center_X", "Center_Y"),
+            node_color_by = "som_cluster",
+            assay_type = "colData",
+            node_size_fix = 0.7,
+            node_shape_fix = 15) +
+  scale_color_manual(values = c("grey80","grey80","grey80","#4fc5e1","grey80",
+                                "#9A68A4","grey80","#DD708E","grey80","grey80",
+                                "grey80","grey80","grey80", "grey80"))
+
+```
+
+```{r dimensionality reduction - RUN}
+
+# Equal sampling across clusters
+clusters <- unique(sce_hr$som_cluster)
+
+num_samples_per_cluster <- 200000 / length(clusters)
+
+sampled_indices <- c()
+
+for (cluster in clusters) {
+  cluster_indices <- which(sce_hr$som_cluster == cluster)
+  num_to_sample <- min(num_samples_per_cluster, length(cluster_indices))
+  sampled_indices <- c(sampled_indices, sample(cluster_indices, num_to_sample))
+}
+
+sce_subset <- sce_hr[,sampled_indices]
+
+set.seed(220225)
+sce_subset <- runTSNE(sce_subset, exprs_values = "normalized", subset_row = markers)
+
+# Figure 2
+dittoDimPlot(sce_subset, var = "som_cluster", reduction.use = "TSNE", size = 0.1, assay = "scaled") +
+  scale_color_manual(values = c("#9A68A4","#3c6f9c","#4a8db5","#EC867E","#4fc5e1",
+                                "#76669B","#204a77","#EA7246","#DD708E","#E87687",
+                                "#ba7e7e","#B81840","#F5B35E"))
+
+
+```
+
+```{r DA testing - RUN}
+
+#excluding background pixels
+input <- sce_hr[,which(sce_hr$som_cluster != "3")]
+input$som_cluster <- as.character(input$som_cluster)
+abundances <- table(input$som_cluster, input$cell)
+abundances <- as.array(abundances)
+
+meta <- unique(colData(input)[,c("cell", "condition")])
+
+meta$info <- as.character(meta$condition)
+meta$info[meta$info == "DMSO"] <- "ref"
+meta$info <- factor(meta$info)
+meta$info <- relevel(meta$info, ref = "ref")
+
+y.ab <- DGEList(counts = abundances, samples = meta, group = meta$info)
+y.ab <- calcNormFactors(y.ab)
+
+design <- model.matrix(~meta$info)
+
+y.ab <- estimateDisp(y.ab, design)
+fit.ab <- glmQLFit(y.ab, design, robust = TRUE)
+res <- glmQLFTest(fit.ab, coef=colnames(fit.ab)[ncol(fit.ab)])
+
+summary(decideTests(res))
+
+DA <- res$table
+DA$som_cluster <- rownames(DA)
+DA$significant <- ifelse(DA$PValue < 0.05 & abs(DA$logFC) > 0.25 , "yes", "no")
+DA <- DA[order(DA$logFC, decreasing = TRUE), ]
+
+# Figure 2
+ggplot(DA, aes(x = reorder(som_cluster, logFC), y = logFC, fill = significant)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  geom_hline(yintercept = 1, color = "lightgrey", linetype = "dashed", size = 0.3) +
+  geom_hline(yintercept = -1, color = "lightgrey", linetype = "dashed", size = 0.3) +
+  geom_hline(yintercept = -0.5, color = "lightgrey", linetype = "dashed", size = 0.3) +
+  geom_hline(yintercept = 0.5, color = "lightgrey", linetype = "dashed", size = 0.3) +
+  labs(title = "Differential Abundance of som_clusters",
+       x = "som_cluster",
+       y = "Log Fold Change") +
+  #ylim(c(-1,1.5)) +
+  scale_fill_manual(values = c("#4fc5e1","#204a77")) +
+  theme_minimal() +  # Start with a minimal theme
+    theme(
+      panel.grid.major = element_blank(),   # Remove major grid lines
+      panel.grid.minor = element_blank(),   # Remove minor grid lines
+      panel.border = element_rect(colour = "black", fill = NA, size = 0.3),  # Add a border around the plot
+      plot.background = element_blank()      # Remove background color
+    )
+
+```
+
+```{r Correlation changes on pixel level - RUN}
+
+markers <- c("H3", "p53", "Ki67", "pH2AX", "pATM", "Survivin", "bCatenin",
+             "H4K12Ac", "H3K4me2","pRb", "DNA1", "DNA2", "MUC16", "GLUT1",
+             "GSTP1","HSP70", "ATP5A","HSP10", "TUBB3", "LRP", "Mesothelin",
+             "ERCC1", "ECad","HSP27", "cC3")
+
+sce_DMSO <- sce_hr[,which(sce_hr$condition == "DMSO")]
+sce_CP <- sce_hr[,which(sce_hr$condition == "CP")]
+data_DMSO <- t(assay(sce_DMSO, "exprs")[c(markers),])
+data_CP <- t(assay(sce_CP, "exprs")[c(markers),])
+
+colnames(data_DMSO)[7] <- "bCat"
+colnames(data_CP)[7] <- "bCat"
+
+column_combinations <- combn(ncol(data_DMSO), 2)
+
+cor_DMSO <- data.frame()
+for(j in unique(sce_DMSO$cell)){
+  for(i in 1:300){
+    marker1 <- data_DMSO[which(sce_DMSO$cell == j), column_combinations[1,i]]  
+    marker2 <- data_DMSO[which(sce_DMSO$cell == j), column_combinations[2,i]]
+    cor_test <- cor.test(marker1, marker2, method = "spearman")
+    
+    temp_result <- data.frame(
+      Marker1 = colnames(data_DMSO)[column_combinations[1,i]],
+      Marker2 = colnames(data_DMSO)[column_combinations[2,i]],
+      ROI = j,
+      Correlation = cor_test$estimate,
+      p_value = cor_test$p.value
+      )
+    cor_DMSO <- rbind(cor_DMSO, temp_result)
+    }
+  }
+
+cor_CP <- data.frame()
+for(j in unique(sce_CP$cell)){
+  for(i in 1:300){
+    marker1 <- data_CP[which(sce_CP$cell == j), column_combinations[1,i]]  
+    marker2 <- data_CP[which(sce_CP$cell == j), column_combinations[2,i]]
+    cor_test <- cor.test(marker1, marker2, method = "spearman")
+    
+    temp_result <- data.frame(
+      Marker1 = colnames(data_CP)[column_combinations[1,i]],
+      Marker2 = colnames(data_CP)[column_combinations[2,i]],
+      ROI = j,
+      Correlation = cor_test$estimate,
+      p_value = cor_test$p.value
+      )
+    cor_CP <- rbind(cor_CP, temp_result)
+    }
+  }
+
+cor_DMSO$condition <- "DMSO"
+cor_CP$condition <- "CP"
+
+cor <- rbind(cor_DMSO, cor_CP)
+cor <- cor[which(cor$Marker1 != "H3"),]
+cor <- cor[which(cor$Marker1 != "DNA2"),]
+cor <- cor[which(cor$Marker2 != "DNA2"),]
+
+mean_correlations <- cor %>%
+  group_by(Marker1, Marker2, condition) %>%
+  summarize(mean_correlation = mean(Correlation, na.rm = TRUE), .groups = 'drop')
+
+mean_correlations <- mean_correlations %>%
+  pivot_wider(names_from = condition, values_from = mean_correlation, values_fill = 0)
+
+mean_correlations <- mean_correlations %>%
+  mutate(change = CP - DMSO)
+
+merged_data <- cor %>%
+  select(Marker1, Marker2, ROI, Correlation, condition) %>%
+  pivot_wider(names_from = condition, values_from = Correlation)
+
+# Check for significance
+results <- merged_data %>%
+  group_by(Marker1, Marker2) %>%
+  summarize(
+    t_test_p_value = t.test(DMSO, CP, paired = FALSE)$p.value,
+    wilcox_p_value = wilcox.test(DMSO, CP, paired = FALSE)$p.value,
+    .groups = 'drop'
+  )
+
+results <- results %>%
+  mutate(
+    t_test_adj_p_value = p.adjust(t_test_p_value, method = "BH"),
+    wilcox_adj_p_value = p.adjust(wilcox_p_value, method = "BH")
+  )
+
+# Figure 3
+mean_correlations$abs_change <- abs(mean_correlations$change)
+mean_correlations$plot <- results$wilcox_adj_p_value
+mean_correlations$plot[which(mean_correlations$plot > 0.05 | mean_correlations$abs_change < 0.08)] <- NA
+mean_correlations$opacity <- mean_correlations$abs_change/max(mean_correlations$abs_change)
+mean_correlations$p_value <- results$t_test_p_value
+
+
+# Create a graph object
+g <- graph_from_data_frame(mean_correlations[, c("Marker1", "Marker2", "change", "abs_change", "DMSO", "CP", "plot")], directed = FALSE)
+g <- delete.edges(g, E(g)[is.na(E(g)$plot)])
+
+# Define layout for circular plotting
+layout <- layout_in_circle(g)
+
+
+ggraph(g, layout = 'linear', circular = TRUE) + 
+  
+  geom_edge_arc(aes(color = change, width = abs_change, alpha = abs_change)) + 
+  geom_node_text(aes(label = name, angle = node_angle(x, y), 
+                     hjust = ifelse(x >= 0, -0.2, 1.2),
+                     vjust = ifelse(y >= 0.2, 0.2, 0.8))) +
+  geom_node_point(shape = 21, size = 3, fill = "#204a77", color = "#204a77") +
+  theme_graph() +
+  scale_edge_color_gradient2(low = '#204a77', high = '#CA3B43', mid = "white", midpoint = 0) +
+  scale_edge_width_continuous(range = c(1,4)) +
+  scale_edge_alpha_continuous(range = c(0.5,1)) +
+  coord_fixed(xlim = c(-1.8, 1.8), ylim = c(-1.8, 1.8)) +
+  guides(fill = guide_none())
+
+```
+
+
+```{r silhouette width - RUN}
+
+markers <- c("H3", "p53", "Ki67", "pH2AX", "pATM", "Survivin", "bCatenin",
+             "H4K12Ac", "H3K4me2","pRb", "DNA1", "DNA2", "MUC16", "GLUT1",
+             "GSTP1","HSP70", "ATP5A","HSP10", "TUBB3", "LRP", "Mesothelin",
+             "ERCC1", "ECad","HSP27", "cC3")
+
+set.seed(1234)
+sce_lr_subset <- sce_lr[markers,sample(ncol(sce_lr), 1000)]
+sce_hr_subset <- sce_hr[markers,sample(ncol(sce_hr), 1000)]
+
+cor_matrix <- cor(assay(sce_lr_subset, "scaled"))
+dist_matrix_1 <- 1 - cor_matrix
+
+cor_matrix <- cor(assay(sce_hr_subset, "scaled"))
+dist_matrix_03 <- 1 - cor_matrix
+
+sil_1 <- silhouette(as.integer(sce_lr_subset$som_cluster), dist_matrix_1)
+nei_1 <- neighborPurity(dist_matrix_1, as.integer(sce_lr_subset$som_cluster), k = 10)
+nei_1$cluster <- sce_lr_subset$som_cluster
+
+sil_03 <- silhouette(as.integer(sce_hr_subset$som_cluster), dist_matrix_03)
+nei_03 <- neighborPurity(dist_matrix_03, as.integer(sce_hr_subset$som_cluster), k = 10)
+nei_03$cluster <- sce_hr_subset$som_cluster
+
+# Compute the mean silhouette width
+mean_sil_1_per_cluster <- as.data.frame(sil_1) %>%
+  dplyr::group_by(cluster) %>%
+  dplyr::summarise(mean_sil_width = mean(sil_width))
+
+mean_nei_1_per_cluster <- as.data.frame(nei_1) %>%
+  dplyr::group_by(cluster) %>%
+  dplyr::summarise(mean_nei = mean(purity))
+
+mean_sil_03_per_cluster <- as.data.frame(sil_03) %>%
+  dplyr::group_by(cluster) %>%
+  dplyr::summarise(mean_sil_width = mean(sil_width))
+
+mean_nei_03_per_cluster <- as.data.frame(nei_03) %>%
+  dplyr::group_by(cluster) %>%
+  dplyr::summarise(mean_nei = mean(purity))
+
+sil_1 <- mean(mean_sil_1_per_cluster$mean_sil_width)
+sil_03 <- mean(mean_sil_03_per_cluster$mean_sil_width)
+
+nei_1 <- mean(mean_nei_1_per_cluster$mean_nei)
+nei_03 <- mean(mean_nei_03_per_cluster$mean_nei)
+
+# Print the comparison
+mean_sil_1_per_cluster; mean_sil_03_per_cluster
+sil_1; sil_03; nei_1; nei_03
+
+db_lr <- index.DB(x = t(assay(sce_lr_subset, "scaled")), cl = as.numeric(sce_lr_subset$som_cluster), centrotypes = "centroids")$DB
+db_hr <- index.DB(x = t(assay(sce_hr_subset, "scaled")), cl = as.numeric(sce_hr_subset$som_cluster), centrotypes = "centroids")$DB
+
+
+```
+
+```{r FOM calculations - RUN}
+
+set.seed(1234)
+sce_lr_subset <- sce_lr[markers,sample(ncol(sce_lr), 20000)]
+sce_hr_subset <- sce_hr[markers,sample(ncol(sce_hr), 20000)]
+
+# Define the function to calculate distances and FOM
+calculate_FOM <- function(sce) {
+  data_matrix <- assay(sce, "scaled")
+  clusters <- sce$som_cluster
+  #cor_matrix <- cor(data_matrix)
+  #dist_matrix <- 1 - cor_matrix
+  dist_matrix <- as.matrix(dist(t(data_matrix)))
+  unique_clusters <- unique(clusters)
+  within_distances <- c()
+  between_distances <- c()
+
+  for (cluster in unique_clusters) {
+    cluster_indices <- which(clusters == cluster)
+
+    # Calculate within-cluster distances
+      within_cluster_dist <- dist_matrix[cluster_indices, cluster_indices]
+      within_distances <- c(within_distances, as.numeric(within_cluster_dist))
+
+    # Calculate between-cluster distances
+    other_indices <- which(clusters != cluster)
+      between_cluster_dist <- dist_matrix[cluster_indices, other_indices]
+      between_distances <- c(between_distances, as.numeric(between_cluster_dist))
+  }
+
+  # Calculate mean distances
+  mean_within <- mean(within_distances, na.rm = TRUE)
+  mean_between <- mean(between_distances, na.rm = TRUE)
+
+  # Compute Figure of Merit (FOM)
+  FOM <- mean_within / mean_between
+
+  return(list(mean_within = mean_within, mean_between = mean_between, FOM = FOM))
+}
+
+FOM_1 <- calculate_FOM(sce_lr_subset)
+FOM_03 <- calculate_FOM(sce_hr_subset)
+
+FOM_1
+FOM_03
+
+data <- data.frame(mode = c("classic IMC (1µm)", "classic IMC (1µm)", "classic IMC (1µm)", "HR-IMC (333nm)", "HR-IMC (333nm)", "HR-IMC (333nm)", "classic IMC (1µm)", "HR-IMC (333nm)", "classic IMC (1µm)","HR-IMC (333nm)"),
+                   metric = c("within", "between", "DBI", "within", "between", "DBI", "SW", "SW", "NP", "NP"),
+                   value = c(FOM_1$mean_within, FOM_1$mean_between, db_lr, FOM_03$mean_within, FOM_03$mean_between, db_hr, sil_1, sil_03, nei_1, nei_03))
+data$adj_y <- data$value/10
+data$metric <- factor(data$metric, levels = c("SW", "NP", "DBI", "within", "between"))
+
+ggplot(data[which(!data$metric %in% c("within", "between")),], aes(x = metric, y = value, fill = mode, col = mode)) +
+  geom_bar(stat = "identity", data = subset(data, metric == "SW"), position = "dodge") +
+  geom_bar(stat = "identity", data = subset(data, metric == "NP"), position = "dodge", aes(y = adj_y)) +
+  geom_bar(stat = "identity", data = subset(data, metric == "DBI"), position = "dodge", aes(y = adj_y)) +
+  scale_fill_manual(values = alpha(c("#204a77","#B81840"), 0.5)) +
+  scale_color_manual(values = alpha(c("#204a77", "#B81840"))) +
+  theme_minimal() +  
+    theme(
+      panel.grid.major = element_blank(),   
+      panel.grid.minor = element_blank(),   
+      panel.border = element_rect(colour = "black", fill = NA, size = 0.3),  
+      plot.background = element_blank()      
+    )
+
+ggplot(data[which(data$metric %in% c("within", "between")),], aes(x = metric, y = value, fill = mode, col = mode)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_manual(values = alpha(c("#204a77","#B81840"), 0.5)) +
+  scale_color_manual(values = alpha(c("#204a77", "#B81840"))) +
+  theme_minimal() +  
+    theme(
+      panel.grid.major = element_blank(),   
+      panel.grid.minor = element_blank(),   
+      panel.border = element_rect(colour = "black", fill = NA, size = 0.3),  
+      plot.background = element_blank()      
+    )
+
+```
+
+
+

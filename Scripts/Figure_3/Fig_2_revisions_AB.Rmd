@@ -1,0 +1,211 @@
+---
+title: "Untitled"
+output: html_document
+date: "2025-03-17"
+editor_options: 
+  chunk_output_type: console
+---
+
+---
+title: "Untitled"
+author: "Alina Bollhagen"
+date: "2024-09-23"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r load libraries - RUN}
+
+library(imcRtools)
+library(CATALYST)
+library(scater)
+library(ComplexHeatmap)
+library(viridis)
+library(circlize)
+library(dplyr)
+library(scales)
+library(paletteer)
+library(ggplot2)
+library(dplyr)
+library(SingleCellExperiment)
+library(Rphenoannoy)
+library(shiny)
+
+```
+
+```{r read in data}
+sce_hr <- readRDS("/mnt/central_nas/projects/Pladioc/SRIMC_project/Zenodo/Figure_3/sce_hr_SOMclusters.RDS")
+sce_lr <- readRDS("/mnt/central_nas/projects/Pladioc/SRIMC_project/Zenodo/Figure_3/sce_lr_SOMclusters.RDS")
+```
+
+```{r segmentation inspection}
+sce_seg <- sce_lr[,which(sce_lr$condition == "DMSO")]
+path.to.masks <- "~/mnt/central_nas/projects/Pladioc/SRIMC_project//Zenodo/Figure_3/example_masks//"
+path.to.images <- "~/mnt/central_nas/projects/Pladioc/SRIMC_project//Zenodo/Figure_3/example_img_lr/"
+masks <- loadImages(path.to.masks, pattern = ".tiff", as.is = TRUE)
+images <- loadImages(path.to.images, pattern = ".tiff")
+
+channelNames(images) <- rownames(sce_lr)
+images_new <- getChannels(images, c(1:42)) 
+images_new <- scaleImages(images_new, 2^16-1)
+channelNames(images_new) <-  rownames(sce_lr)
+
+sce_seg$image <- sub(".tiff", "", sce_seg$image)
+mcols(images_new)$image <- unique(sce_seg$image)
+mcols(masks)$image <- unique(sce_seg$image)
+sce_seg$CellID <- c(1:length(sce_seg$cell))
+
+app <- cytoviewer(image = images_new, 
+                  mask = masks, 
+                  object = sce_seg, 
+                  img_id = "image", 
+                  cell_id = "CellID")
+
+if (interactive()) {
+  shiny::runApp(app)
+}
+
+palette_50 <- viridis::inferno(100)
+plotSpatial(sce_seg[,which(sce_seg$image == unique(sce_seg$image)[4])],
+            coords = c("Center_X", "Center_Y"),
+            node_color_by = "cell",
+            node_size_fix = 0.1,
+            img_id = "image") +
+  theme(legend.position = "none") +
+  scale_color_manual(values = sample(palette_50, length(palette_50)))
+
+```
+
+```{r pixel-level variation}
+
+markers <- c("H3", "p53", "Ki67", "pH2AX", "pATM", "Survivin", "bCatenin",
+             "H4K12Ac", "H3K4me2","pRb", "DNA1", "DNA2", "MUC16", "GLUT1",
+             "GSTP1","HSP70", "ATP5A","HSP10", "TUBB3", "LRP", "Mesothelin",
+             "ERCC1", "ECad","HSP27", "cC3")
+
+var_hr <- as.data.frame(apply(as.data.frame(assay(sce_hr, "scaled")[markers,]), 1, function(x) var(x)))
+var_hr$cond <- "HR-IMC"
+colnames(var_hr)[1] <- "Value"
+var_hr$Marker <- rownames(var_hr)
+var_lr <- as.data.frame(apply(as.data.frame(assay(sce_lr, "scaled")[markers,]), 1, function(x) var(x)))
+var_lr$cond <- "IMC"
+colnames(var_lr)[1] <- "Value"
+var_lr$Marker <- rownames(var_lr)
+
+var <- rbind(var_hr, var_lr)
+
+ggplot(as.data.frame(var), aes(x = Marker, y = Value, col = cond, group = Marker)) +
+  geom_point(size = 3, alpha = 0.7) +
+  scale_color_manual(values = c("#B81840", "#204a77")) +
+  theme_minimal() +  
+  ylab("Pixel intensity variance") +
+  geom_line(color = "grey", linetype = "dotted") +
+    theme(
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.border = element_rect(colour = "black", fill = NA, size = 0.3),
+      plot.background = element_blank(),
+      axis.text.x = element_text(angle = 90, hjust = 1)
+    )
+
+```
+
+
+```{r nuclear vs. non-nuclear}
+
+sce_lr$compartment <- "nucleus"
+sce_lr$compartment[which(sce_lr$som_cluster %in% c(8,11))] <- "cytoplasm"
+sce_lr$compartment[which(sce_lr$som_cluster %in% c(12))] <- "background"
+sce_lr$compartment[which(sce_lr$som_cluster %in% c(13))] <- "membrane"
+sce_lr$compartment[which(sce_lr$som_cluster %in% c(9))] <- "mitochondria"
+
+sce_hr$compartment <- "nucleus"
+sce_hr$compartment[which(sce_hr$som_cluster %in% c(10,5))] <- "cytoplasm"
+sce_hr$compartment[which(sce_hr$som_cluster %in% c(3))] <- "background"
+sce_hr$compartment[which(sce_hr$som_cluster %in% c(6))] <- "membrane"
+sce_hr$compartment[which(sce_hr$som_cluster %in% c(4))] <- "mitochondria"
+
+rowData(sce_hr)$compartment <- rowData(sce_lr)$compartment <- c("nucleus", NA, "cytoplasm", "nucleus", "cytoplasm", 
+                                                                "cytoplasm", NA, "membrane","cytoplasm", "cytoplasm", 
+                                                                "nucleus", NA, "nucleus", "cytoplasm", NA, 
+                                                                "cytoplasm", "cytoplasm", "mitochondria", "nucleus", "nucleus",
+                                                                "mitochondria", "nucleus", "cytoplasm", "membrane", "membrane",
+                                                                NA, "cytoplasm", NA, "nucleus", "cytoplasm", 
+                                                                "nucleus", "nucleus", NA, "membrane", NA, 
+                                                                "nucleus", "cytoplasm","nucleus", "nucleus", NA, 
+                                                                NA, NA)
+
+cyto_lr <- mean(assay(sce_lr, "exprs")[which(rowData(sce_lr)$compartment == "cytoplasm"),which(sce_lr$compartment == "cytoplasm")])
+cyto_hr <- mean(assay(sce_hr, "exprs")[which(rowData(sce_hr)$compartment == "cytoplasm"),which(sce_hr$compartment == "cytoplasm")])
+
+impurity <- data.frame(method = rep(c("IMC", "HR-IMC"),3))
+impurity$compartment <- c("nucleus", "nucleus", "mitochondria", "mitochondria", "membrane", "membrane")
+impurity$method <- factor(impurity$method, levels = c("IMC", "HR-IMC"))
+
+impurity$value <- c(mean(assay(sce_lr, "exprs")[which(rowData(sce_lr)$compartment == "cytoplasm"),
+                                                  which(sce_lr$compartment == "nucleus")])/cyto_lr,
+                    mean(assay(sce_hr, "exprs")[which(rowData(sce_hr)$compartment == "cytoplasm"),
+                                                  which(sce_hr$compartment == "nucleus")])/cyto_hr,
+                    mean(assay(sce_lr, "exprs")[which(rowData(sce_lr)$compartment == "cytoplasm"),
+                                                  which(sce_lr$compartment == "mitochondria")])/cyto_lr,
+                    mean(assay(sce_hr, "exprs")[which(rowData(sce_hr)$compartment == "cytoplasm"),
+                                                  which(sce_hr$compartment == "mitochondria")])/cyto_hr,
+                    mean(assay(sce_lr, "exprs")[which(rowData(sce_lr)$compartment == "cytoplasm"),
+                                                   which(sce_lr$compartment == "membrane")])/cyto_lr,
+                    mean(assay(sce_hr, "exprs")[which(rowData(sce_hr)$compartment == "cytoplasm"),
+                                                   which(sce_hr$compartment == "membrane")])/cyto_hr)
+
+ggplot(impurity, aes(x = compartment, y = value, fill = method, color = method)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal() +
+  ylab("compartment/cytoplasm signal") +
+  xlab("") +
+  scale_color_manual(values = c("#204a77", "#B81840")) +
+  scale_fill_manual(values = c(alpha("#204a77", 0.5), alpha("#B81840",0.5))) +
+  theme(
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.border = element_rect(colour = "black", fill = NA, size = 0.3),
+      plot.background = element_blank(),
+      axis.text.x = element_text(angle = 45, hjust = 1)
+    )
+
+```
+
+```{r R phenograph clustering}
+
+#tested 30000 und k = 500, 2306
+
+markers <- c("H3", "p53", "Ki67", "pH2AX", "pATM", "Survivin", "bCatenin",
+             "H4K12Ac", "H3K4me2","pRb", "DNA1", "DNA2", "MUC16", "GLUT1",
+             "GSTP1","HSP70", "ATP5A","HSP10", "TUBB3", "LRP", "Mesothelin",
+             "ERCC1", "ECad","HSP27", "cC3")
+
+set.seed(2306)
+sce_subset <- sce_hr[,sample(ncol(sce_hr), 30000)]
+
+mat <- t(assay(sce_subset, "exprs")[markers,])
+
+set.seed(230619)
+out <- Rphenoannoy(mat, k = 500)
+clusters <- factor(membership(out[[2]]))
+sce_subset$pg_clusters <- clusters
+
+sce_mean <- aggregateAcrossCells(sce_subset, ids = sce_subset$pg_clusters, statistics = "mean", use.assay.type = "counts")
+assay(sce_mean, "exprs") <- asinh(assay(sce_mean, "counts"))
+assay(sce_mean, "scaled") <- t(scale(t(assay(sce_mean, "exprs"))))
+
+# Figure 2
+my_palette <- colorRamp2(c(-2.5, 0, 2.5), c("#204a77", "white", "#CA3B43"))
+Heatmap(t(assay(sce_mean, "scaled")[c(markers),]),
+        col = my_palette,
+        column_names_rot = 90,
+        border = TRUE,
+        column_order = c(6,10,8,3,4,11,12,9,5,1,2,22,7,25,18,17,16,15,19,24,14,23,20,21,13),
+        column_split = c(1,1,1,1,1,1,1,1,1,1,1,1,2,2,2,2,2,2,2,2,2,1,2,2,1))
+
+```
+
+
+
