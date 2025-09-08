@@ -1,0 +1,105 @@
+---
+title: "Untitled"
+output: html_document
+date: "2025-09-05"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(EBImage)       
+library(S4Vectors)     
+library(dplyr)         
+library(tidyr)        
+library(ggplot2)
+library(cytomapper)
+```
+
+```{r}
+images <- loadImages("/mnt/central_nas/projects/Pladioc/SRIMC_project/Zenodo/Extended_Data_3/HRIMC_characterization/tonsil_images_500x500_RL_PSF/")
+```
+
+```{r}
+markers <- c("MPO", "Xe", "ECad", "CCR7", "Vimentin", "HLADR", "CD27",
+                          "CD303", "CD68", "CD11b", "CD20", "CD56", "GranzymeB",
+                          "CD3", "LMAP3", "CD11c", "PD1", "GITR", "CD14", "PDL1", 
+                          "TCF7", "CD45", "FOXP3", "ICOS", "Ki67", "CD8", "Tim3",
+                          "IRF4", "VISTA", "CD1c", "CD4", "CD31", "CXCL12", "CCL21",
+                          "CXCL13", "DNA1", "DNA2", "CD15")
+channelNames(images) <- markers
+
+
+# Store patient and image level information in elementMetadata
+mcols(images) <- DataFrame(image = names(images))
+
+for(i in 1:38){
+  data <- c(imageData(images[[2]])[,,i])
+  norm_counts <- (data-min(data))/(quantile(data, 0.99)-min(data))
+  norm_counts <- pmin(norm_counts, 1)
+  imageData(images[[2]])[,,i] <- matrix(norm_counts, ncol = 1333, byrow = TRUE)
+}
+
+for(i in 1:38){
+  data <- c(imageData(images[[4]])[,,i])
+  norm_counts <- (data-min(data))/(quantile(data, 0.99)-min(data))
+  norm_counts <- pmin(norm_counts, 1)
+  imageData(images[[4]])[,,i] <- matrix(norm_counts, ncol = 800, byrow = TRUE)
+}
+
+
+cur <- lapply(names(images), function(x){
+    img <- images[[x]]
+    mat <- apply(img, 3, function(ch){
+        # Otsu threshold
+        thres <- otsu(ch, range = c(min(ch), max(ch)), levels = 65536)
+
+        snr <- mean(ch[ch > thres]) / mean(ch[ch <= thres])
+        ps <- mean(ch[ch > thres])
+        ts <- sum(ch[ch > thres])
+        
+        return(c(snr = snr, ps = ps, ts = ts))
+    })
+    t(mat) %>% as.data.frame() %>% 
+        mutate(image = x,
+               marker = colnames(mat)) %>% 
+        pivot_longer(cols = c(snr, ps, ts))
+})
+
+cur_snr <- do.call(rbind, cur)
+cur_snr$condition <- rep(c(rep("after",114), rep("before",114)),2)
+cur_snr$marker <- rep(c(rep(markers, each = 3)),4)
+cur_snr$resolution <- c(rep("333",228), rep("500",228))
+
+markers <- c("Vimentin", "CD4", "CD11b", "CD8", "FOXP3", "HLADR", "CD31", "CD20", "CD11c", "CD1c", "DNA2", "CD3","CD56")
+markers <- c("Vimentin", "CD4", "CD8", "HLADR", "CD31", "CD20", "CD11c", "CD1c", "DNA2")
+ggplot(cur_snr[which(cur_snr$resolution == "500" & cur_snr$name == "snr" & cur_snr$marker %in% markers),], 
+       aes(x = factor(marker, levels = c("CD8", "CD1c", "CD11c", "DNA2","HLADR","FOXP3","CD31","CD20","CD11b","CD3", "CD4",   
+                                          "CD56",  "Vimentin")), y = log2(value), col = condition)) +
+  ylab("SNR [log2]") +
+  ylim(c(1.5,4.5)) +
+  geom_point(size = 3, alpha = 0.7) +
+  scale_color_manual(values = c("#B81840", "#204a77")) +
+  geom_line(color = "grey30", linetype = "dotted") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        panel.grid = element_blank(),
+        panel.border = element_rect(color = "black", fill = NA, size = 0.5),
+        panel.background = element_rect(fill = "white"))
+
+ggplot(cur_snr[which(cur_snr$resolution == "333" & cur_snr$name == "snr" & cur_snr$marker %in% markers),], 
+       aes(x = factor(marker, levels = c("DNA2","CD1c","CD8","HLADR","CD20","CD11c", "CD31","CD4",   
+                                          "Vimentin")), y = log2(value), col = condition)) +
+  ylab("SNR [log2]") +
+  ylim(c(1.5,4.5)) +
+  geom_point(size = 3, alpha = 0.7) +
+  scale_color_manual(values = c("#B81840", "#204a77")) +
+  geom_line(color = "grey30", linetype = "dotted") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        panel.grid = element_blank(),
+        panel.border = element_rect(color = "black", fill = NA, size = 0.5),
+        panel.background = element_rect(fill = "white"))
+
+```

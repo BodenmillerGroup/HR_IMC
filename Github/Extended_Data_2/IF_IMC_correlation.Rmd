@@ -1,0 +1,406 @@
+---
+title: "Untitled"
+output: html_document
+date: "2025-03-31"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+library(EBImage)
+library(cytomapper)
+library(imager)
+library(tidyr)
+```
+
+This is an exemplary code for one tissue type and two markers.
+
+```{r read in data}
+
+tiff_IMC_333 <- loadImages("/mnt/central_nas/projects/Pladioc/SRIMC_project/Zenodo/Extended_Data_2/img_RL_PSF/IF_GLUT1_SMA_FFPE_colon_333.tiff")
+tiff_IMC_classic <- loadImages("/mnt/central_nas/projects/Pladioc/SRIMC_project/Zenodo/Extended_Data_2/img/IF_GLUT1_SMA_FFPE_colon_classic.tiff")
+tiff_IF <- loadImages("/mnt/central_nas/projects/Pladioc/SRIMC_project/Zenodo/Extended_Data_2/img_IF/Colon_GLUT1_SMA.tif")
+
+affine_matrix_333 <- read.csv("/mnt/central_nas/projects/Pladioc/SRIMC_project/Zenodo/Extended_Data_2/transformations/GLUT1_SMA_colon_transformation_333.txt", header = FALSE)
+affine_matrix_classic <- read.csv("/mnt/central_nas/projects/Pladioc/SRIMC_project/Zenodo/Extended_Data_2/transformations/GLUT1_SMA_colon_transformation_classic.txt", header = FALSE)
+
+## GENERATE the HR-IMC
+image_matrix <- imageData(tiff_IMC_333[[1]])
+pixel_coordinates <- expand.grid(row = 1:nrow(image_matrix), col = 1:ncol(image_matrix))
+pixel_GLUT1 <- as.vector(image_matrix[,,2])
+pixel_SMA <- as.vector(image_matrix[,,3])
+pixel_DNA <- as.vector(image_matrix[,,5])
+
+sce_333 <- SingleCellExperiment(assays = list(counts = rbind(pixel_GLUT1, pixel_SMA, pixel_DNA)))
+rownames(sce_333) <- c("GLUT1", "SMA", "DNA")
+
+sce_333$Center_X <- pixel_coordinates$col
+sce_333$Center_Y <- pixel_coordinates$row
+sce_333$image <- "tiff_IMC_333"
+
+assay(sce_333, "exprs") <- asinh(assay(sce_333, "counts"))
+assay(sce_333, "scaled") <- t(scale(t(assay(sce_333, "exprs"))))
+cell_norm_counts <- t(apply(assay(sce_333, "counts"), 1, function(x)(x-min(x))/(quantile(x, 0.99)-min(x))))
+cell_norm_counts <- t(apply(cell_norm_counts, 1, function(x) pmin(x, 1)))
+assay(sce_333, "normalized", withDimnames = FALSE) <- cell_norm_counts
+
+coords_matrix <- cbind(sce_333$Center_X, sce_333$Center_Y, 1)
+transformed_coords <- coords_matrix %*% t(affine_matrix_333)
+
+sce_333$Center_X_trans <-  as.integer(transformed_coords[, 2])+3
+sce_333$Center_Y_trans <- as.integer(transformed_coords[, 1])+3
+sce_333$match <- paste0(sce_333$Center_X_trans, "_", sce_333$Center_Y_trans)
+
+## GENERATE the classic IMC
+matrix <- imageData(tiff_IMC_classic[[1]])
+#image_matrix <- EBImage::resize(matrix, w = 900, h = 900)
+image_matrix <- matrix[rep(1:dim(tiff_IMC_classic[[1]])[1], each = 3),rep(1:dim(tiff_IMC_classic[[1]])[2], each = 3),, drop = FALSE]
+pixel_coordinates <- expand.grid(row = seq(1, by = 1/3, length.out = dim(image_matrix)[1]), col = seq(1, by = 1/3, length.out = dim(image_matrix)[2]))
+pixel_GLUT1 <- as.vector(image_matrix[,,2])
+pixel_SMA <- as.vector(image_matrix[,,3])
+pixel_DNA <- as.vector(image_matrix[,,5])
+
+sce_classic <- SingleCellExperiment(assays = list(counts = rbind(pixel_GLUT1, pixel_SMA, pixel_DNA)))
+rownames(sce_classic) <- c("GLUT1", "SMA", "DNA")
+
+sce_classic$Center_X <- pixel_coordinates$col 
+sce_classic$Center_Y <- pixel_coordinates$row 
+sce_classic$image <- "tiff_IMC_classic"
+
+assay(sce_classic, "exprs") <- asinh(assay(sce_classic, "counts"))
+assay(sce_classic, "scaled") <- t(scale(t(assay(sce_classic, "exprs"))))
+cell_norm_counts <- t(apply(assay(sce_classic, "counts"), 1, function(x)(x-min(x))/(quantile(x, 0.99)-min(x))))
+cell_norm_counts <- t(apply(cell_norm_counts, 1, function(x) pmin(x, 1)))
+assay(sce_classic, "normalized", withDimnames = FALSE) <- cell_norm_counts
+
+coords_matrix <- cbind(sce_classic$Center_X, sce_classic$Center_Y, 1)
+transformed_coords <- coords_matrix %*% t(affine_matrix_classic)
+
+sce_classic$Center_X_trans <-  as.integer(transformed_coords[, 2])
+sce_classic$Center_Y_trans <- as.integer(transformed_coords[, 1])
+sce_classic$match <- paste0(sce_classic$Center_X_trans, "_", sce_classic$Center_Y_trans)
+
+## GENERATE the IF
+image_matrix <- imageData(tiff_IF[[1]])
+pixel_coordinates <- expand.grid(row = 1:nrow(image_matrix), col = 1:ncol(image_matrix))
+pixel_GLUT1 <- as.vector(image_matrix[,,1])
+pixel_SMA <- as.vector(image_matrix[,,2])
+pixel_DNA <- as.vector(image_matrix[,,3])
+
+sce_IF <- SingleCellExperiment(assays = list(counts = rbind(pixel_GLUT1, pixel_SMA, pixel_DNA)))
+rownames(sce_IF) <- c("GLUT1", "SMA", "DNA")
+
+sce_IF$Center_X <- pixel_coordinates$row
+sce_IF$Center_Y <- pixel_coordinates$col
+sce_IF$image <- "tiff_IF"
+sce_IF$match <- paste0(sce_IF$Center_X, "_", sce_IF$Center_Y)
+colnames(sce_IF) <- sce_IF$match
+
+assay(sce_IF, "exprs") <- asinh(assay(sce_IF, "counts"))
+assay(sce_IF, "scaled") <- t(scale(t(assay(sce_IF, "exprs"))))
+cell_norm_counts <- t(apply(assay(sce_IF, "counts"), 1, function(x)(x-min(x))/(quantile(x, 0.99)-min(x))))
+cell_norm_counts <- t(apply(cell_norm_counts, 1, function(x) pmin(x, 1)))
+assay(sce_IF, "normalized", withDimnames = FALSE) <- cell_norm_counts
+
+```
+
+```{r}
+
+plotSpatial(sce_333, img_id = "image",
+            coords = c("Center_X_trans", "Center_Y_trans"),
+            node_color_by = "GLUT1",
+            assay_type = "exprs",
+            node_size_fix = 0.1)
+
+matrix <- sce_IF[,which(sce_IF$Center_X <= max(sce_333$Center_X_trans) & sce_IF$Center_X >= min(sce_333$Center_X_trans) &
+                         sce_IF$Center_Y <= max(sce_333$Center_Y_trans) & sce_IF$Center_Y >= min(sce_333$Center_Y_trans))]
+plotSpatial(input, img_id = "image",
+            coords = c("Center_X", "Center_Y"),
+            node_color_by = "GLUT1",
+            assay_type = "exprs",
+            node_size_fix = 0.1)
+
+plotSpatial(sce_classic, img_id = "image",
+            coords = c("Center_X_trans", "Center_Y_trans"),
+            node_color_by = "GLUT1",
+            assay_type = "exprs",
+            node_size_fix = 0.1)
+
+input <- sce_IF[,which(sce_IF$Center_X <= max(sce_classic$Center_X_trans) & 
+                         sce_IF$Center_X >= min(sce_classic$Center_X_trans) &
+                         sce_IF$Center_Y <= max(sce_classic$Center_Y_trans) & 
+                         sce_IF$Center_Y >= min(sce_classic$Center_Y_trans))]
+plotSpatial(input, img_id = "image",
+            coords = c("Center_X", "Center_Y"),
+            node_color_by = "GLUT1",
+            assay_type = "exprs",
+            node_size_fix = 0.1)
+
+
+
+```
+
+
+```{r}
+
+input_333 <- sce_IF[,which(sce_IF$Center_X <= max(sce_333$Center_X_trans) & sce_IF$Center_X >= min(sce_333$Center_X_trans) &
+                         sce_IF$Center_Y <= max(sce_333$Center_Y_trans) & sce_IF$Center_Y >= min(sce_333$Center_Y_trans))]
+input_classic <- sce_IF[,which(sce_IF$Center_X <= max(sce_classic$Center_X_trans) & sce_IF$Center_X >= min(sce_classic$Center_X_trans) &
+                         sce_IF$Center_Y <= max(sce_classic$Center_Y_trans) & sce_IF$Center_Y >= min(sce_classic$Center_Y_trans))]
+
+bin_size <- 2
+
+# Create binned coordinates
+sce_333$bin_x <- floor(sce_333$Center_X_trans / bin_size)
+sce_333$bin_y <- floor(sce_333$Center_Y_trans / bin_size)
+
+sce_classic$bin_x <- floor(sce_classic$Center_X_trans / bin_size)
+sce_classic$bin_y <- floor(sce_classic$Center_Y_trans / bin_size)
+
+input_333$bin_x <- floor(input_333$Center_X / bin_size)
+input_333$bin_y <- floor(input_333$Center_Y / bin_size)
+
+input_classic$bin_x <- floor(input_classic$Center_X / bin_size)
+input_classic$bin_y <- floor(input_classic$Center_Y / bin_size)
+
+#GLUT1
+imc_333_binned <- data.frame(expr = assay(sce_333, "normalized")["GLUT1", ],
+                         bin_x = sce_333$bin_x,
+                         bin_y = sce_333$bin_y) |>
+  group_by(bin_x, bin_y) |>
+  summarise(GLUT1 = mean(expr, na.rm = TRUE), .groups = "drop")
+
+imc_classic_binned <- data.frame(expr = assay(sce_classic, "normalized")["GLUT1", ],
+                         bin_x = sce_classic$bin_x,
+                         bin_y = sce_classic$bin_y) |>
+  group_by(bin_x, bin_y) |>
+  summarise(GLUT1 = mean(expr, na.rm = TRUE), .groups = "drop")
+
+if_333_binned <- data.frame(expr = assay(input_333, "normalized")["GLUT1", ],
+                        bin_x = input_333$bin_x,
+                        bin_y = input_333$bin_y) |>
+  group_by(bin_x, bin_y) |>
+  summarise(GLUT1 = mean(expr, na.rm = TRUE), .groups = "drop")
+
+if_classic_binned <- data.frame(expr = assay(input_classic, "normalized")["GLUT1", ],
+                        bin_x = input_classic$bin_x,
+                        bin_y = input_classic$bin_y) |>
+  group_by(bin_x, bin_y) |>
+  summarise(GLUT1 = mean(expr, na.rm = TRUE), .groups = "drop")
+
+binned_merged_333 <- inner_join(imc_333_binned, if_333_binned, by = c("bin_x", "bin_y"),
+                             suffix = c("_IMC", "_IF"))
+binned_merged_classic <- inner_join(imc_classic_binned, if_classic_binned, by = c("bin_x", "bin_y"),
+                             suffix = c("_IMC", "_IF"))
+
+data <- data.frame(cor = c(cor(binned_merged_333$GLUT1_IMC, binned_merged_333$GLUT1_IF, use = "complete.obs"),
+                           cor(binned_merged_classic$GLUT1_IMC, binned_merged_classic$GLUT1_IF, use = "complete.obs")),
+                   group = c("HR-IMC", "classic IMC"))
+
+ggplot(data, aes(x = group, y = cor, fill = group)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("grey", "darkblue")) +
+    theme(
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.border = element_rect(colour = "black", fill = NA, size = 0.3),
+      panel.background = element_rect(colour = "white", fill = "white"),
+      axis.text.x = element_text(angle = 90, hjust = 1)
+    )
+data
+
+#SMA
+imc_333_binned <- data.frame(expr = assay(sce_333, "normalized")["SMA", ],
+                         bin_x = sce_333$bin_x,
+                         bin_y = sce_333$bin_y) |>
+  group_by(bin_x, bin_y) |>
+  summarise(GLUT1 = mean(expr, na.rm = TRUE), .groups = "drop")
+
+imc_classic_binned <- data.frame(expr = assay(sce_classic, "normalized")["SMA", ],
+                         bin_x = sce_classic$bin_x,
+                         bin_y = sce_classic$bin_y) |>
+  group_by(bin_x, bin_y) |>
+  summarise(GLUT1 = mean(expr, na.rm = TRUE), .groups = "drop")
+
+if_333_binned <- data.frame(expr = assay(input_333, "normalized")["SMA", ],
+                        bin_x = input_333$bin_x,
+                        bin_y = input_333$bin_y) |>
+  group_by(bin_x, bin_y) |>
+  summarise(GLUT1 = mean(expr, na.rm = TRUE), .groups = "drop")
+
+if_classic_binned <- data.frame(expr = assay(input_classic, "normalized")["SMA", ],
+                        bin_x = input_classic$bin_x,
+                        bin_y = input_classic$bin_y) |>
+  group_by(bin_x, bin_y) |>
+  summarise(GLUT1 = mean(expr, na.rm = TRUE), .groups = "drop")
+
+binned_merged_333 <- inner_join(imc_333_binned, if_333_binned, by = c("bin_x", "bin_y"),
+                             suffix = c("_IMC", "_IF"))
+binned_merged_classic <- inner_join(imc_classic_binned, if_classic_binned, by = c("bin_x", "bin_y"),
+                             suffix = c("_IMC", "_IF"))
+
+data <- data.frame(cor = c(cor(binned_merged_333$GLUT1_IMC, binned_merged_333$GLUT1_IF, use = "complete.obs"),
+                           cor(binned_merged_classic$GLUT1_IMC, binned_merged_classic$GLUT1_IF, use = "complete.obs")),
+                   group = c("HR-IMC", "classic IMC"))
+
+ggplot(data, aes(x = group, y = cor, fill = group)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("grey", "darkorange")) +
+    theme(
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.border = element_rect(colour = "black", fill = NA, size = 0.3),
+      panel.background = element_rect(colour = "white", fill = "white"),
+      axis.text.x = element_text(angle = 90, hjust = 1)
+    )
+data
+
+```
+
+```{r calculating correlations}
+
+data <- read.csv("/mnt/central_nas/projects/Pladioc/SRIMC_project/Zenodo/Extended_Data_2/correlations.csv")
+
+data <- pivot_longer(data,
+                        cols = c(classic, HR),
+                        names_to = "resolution",
+                        values_to = "value")
+
+
+ggplot(data[which(data$marker == "GLUT1"),], 
+       aes(x = resolution, y = value)) +
+  geom_boxplot(fill = alpha("darkturquoise", 0.2), col = "darkturquoise") +
+  ylab("Correlation") +
+  ylim(c(0.2,0.7))+
+  geom_point(aes(col = tissue), size = 3, alpha = 0.7) +
+  scale_color_manual(values = c("black", "grey30", "grey50", "grey70", "grey85")) +
+  geom_line(aes(group = tissue), size = 0.3, col = "grey") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        panel.grid = element_blank(),
+        panel.border = element_rect(color = "black", fill = NA, size = 0.5),
+        panel.background = element_rect(fill = "white")) 
+
+ggplot(data[which(data$marker == "SMA"),], 
+       aes(x = resolution, y = value)) +
+  geom_boxplot(fill = alpha("red", 0.2), col = "red") +
+  ylab("Correlation") +
+  ylim(c(0.2,0.72))+
+  geom_point(aes(col = tissue), size = 3, alpha = 0.7) +
+  scale_color_manual(values = c("black", "grey30", "grey50", "grey70", "grey85")) +
+  geom_line(aes(group = tissue), size = 0.3, col = "grey") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        panel.grid = element_blank(),
+        panel.border = element_rect(color = "black", fill = NA, size = 0.5),
+        panel.background = element_rect(fill = "white")) 
+
+ggplot(data[which(data$marker == "Vimentin"),], 
+       aes(x = resolution, y = value)) +
+  geom_boxplot(fill = alpha("cornflowerblue", 0.2), col = "cornflowerblue") +
+  ylab("Correlation") +
+  ylim(c(0.2,0.7))+
+  geom_point(aes(col = tissue), size = 3, alpha = 0.7) +
+  scale_color_manual(values = c("black", "grey30", "grey50", "grey70", "grey85")) +
+  geom_line(aes(group = tissue), size = 0.3, col = "grey") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        panel.grid = element_blank(),
+        panel.border = element_rect(color = "black", fill = NA, size = 0.5),
+        panel.background = element_rect(fill = "white")) 
+
+ggplot(data[which(data$marker == "ATP5A"),], 
+       aes(x = resolution, y = value)) +
+  geom_boxplot(fill = alpha("darkorange", 0.2), col = "darkorange") +
+  ylab("Correlation") +
+  ylim(c(0.2,0.7))+
+  geom_point(aes(col = tissue), size = 3, alpha = 0.7) +
+  scale_color_manual(values = c("black", "grey30", "grey50", "grey70", "grey85")) +
+  geom_line(aes(group = tissue), size = 0.3, col = "grey") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        panel.grid = element_blank(),
+        panel.border = element_rect(color = "black", fill = NA, size = 0.5),
+        panel.background = element_rect(fill = "white")) 
+
+t.test(data$value[which(data$marker == "GLUT1" & data$resolution == "HR")], 
+       data$value[which(data$marker == "GLUT1" & data$resolution == "classic")], paired = TRUE)
+t.test(data$value[which(data$marker == "SMA" & data$resolution == "HR")], 
+       data$value[which(data$marker == "SMA" & data$resolution == "classic")], paired = TRUE)
+t.test(data$value[which(data$marker == "Vimentin" & data$resolution == "HR")], 
+       data$value[which(data$marker == "Vimentin" & data$resolution == "classic")], paired = TRUE)
+t.test(data$value[which(data$marker == "ATP5A" & data$resolution == "HR")], 
+       data$value[which(data$marker == "ATP5A" & data$resolution == "classic")], paired = TRUE)
+
+```
+
+```{r comparing SNRs}
+
+data <- read.csv("/mnt/central_nas/projects/Pladioc/SRIMC_project/FINAL/Extended_Data_2/SNR.csv")
+
+data <- pivot_longer(data,
+                        cols = c(SNR_before, SNR_after),
+                        names_to = "resolution",
+                        values_to = "value")
+
+
+ggplot(data[which(data$marker == "GLUT1"),], 
+       aes(x = resolution, y = value)) +
+  geom_boxplot(fill = alpha("darkturquoise", 0.2), col = "darkturquoise") +
+  ylab("Correlation") +
+  ylim(c(8,19))+
+  geom_point(aes(col = tissue), size = 3, alpha = 0.7) +
+  scale_color_manual(values = c("black", "grey30", "grey50", "grey70", "grey85")) +
+  geom_line(aes(group = tissue), size = 0.3, col = "grey") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        panel.grid = element_blank(),
+        panel.border = element_rect(color = "black", fill = NA, size = 0.5),
+        panel.background = element_rect(fill = "white")) 
+
+ggplot(data[which(data$marker == "SMA"),], 
+       aes(x = resolution, y = value)) +
+  geom_boxplot(fill = alpha("red", 0.2), col = "red") +
+  ylab("Correlation") +
+  ylim(c(20,100))+
+  geom_point(aes(col = tissue), size = 3, alpha = 0.7) +
+  scale_color_manual(values = c("black", "grey30", "grey50", "grey70", "grey85")) +
+  geom_line(aes(group = tissue), size = 0.3, col = "grey") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        panel.grid = element_blank(),
+        panel.border = element_rect(color = "black", fill = NA, size = 0.5),
+        panel.background = element_rect(fill = "white")) 
+
+ggplot(data[which(data$marker == "Vimentin"),], 
+       aes(x = resolution, y = value)) +
+  geom_boxplot(fill = alpha("cornflowerblue", 0.2), col = "cornflowerblue") +
+  ylab("Correlation") +
+  ylim(c(10,70))+
+  geom_point(aes(col = tissue), size = 3, alpha = 0.7) +
+  scale_color_manual(values = c("black", "grey30", "grey50", "grey70", "grey85")) +
+  geom_line(aes(group = tissue), size = 0.3, col = "grey") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        panel.grid = element_blank(),
+        panel.border = element_rect(color = "black", fill = NA, size = 0.5),
+        panel.background = element_rect(fill = "white")) 
+
+ggplot(data[which(data$marker == "ATP5A"),], 
+       aes(x = resolution, y = value)) +
+  geom_boxplot(fill = alpha("darkorange", 0.2), col = "darkorange") +
+  ylab("Correlation") +
+  ylim(c(8,35))+
+  geom_point(aes(col = tissue), size = 3, alpha = 0.7) +
+  scale_color_manual(values = c("black", "grey30", "grey50", "grey70", "grey85")) +
+  geom_line(aes(group = tissue), size = 0.3, col = "grey") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        panel.grid = element_blank(),
+        panel.border = element_rect(color = "black", fill = NA, size = 0.5),
+        panel.background = element_rect(fill = "white")) 
+
+t.test(data$value[which(data$marker == "GLUT1" & data$resolution == "SNR_before")], 
+       data$value[which(data$marker == "GLUT1" & data$resolution == "SNR_after")], paired = TRUE)
+t.test(data$value[which(data$marker == "SMA" & data$resolution == "SNR_before")], 
+       data$value[which(data$marker == "SMA" & data$resolution == "SNR_after")], paired = TRUE)
+t.test(data$value[which(data$marker == "Vimentin" & data$resolution == "SNR_before")], 
+       data$value[which(data$marker == "Vimentin" & data$resolution == "SNR_after")], paired = TRUE)
+t.test(data$value[which(data$marker == "ATP5A" & data$resolution == "SNR_before")], 
+       data$value[which(data$marker == "ATP5A" & data$resolution == "SNR_after")], paired = TRUE)
+
+```
+
+

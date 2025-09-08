@@ -1,0 +1,100 @@
+---
+title: "Shrimp"
+author: "Alina Bollhagen"
+date: "2024-09-13"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r load libraries}
+
+library(EBImage)      
+library(S4Vectors)    
+library(dplyr)       
+library(tidyr)        
+library(ggplot2)      
+library(ggrepel)
+library(cytomapper)
+#library(ggalt)
+
+```
+
+
+```{r signal to noise ratio}
+
+images <- loadImages("/mnt/central_nas/projects/Pladioc/SRIMC_project/Zenodo/Extended_Data_3/tonsil_images_500x500/")
+
+channelNames(images) <- c("MPO", "Xe", "ECad", "CCR7", "Vimentin", "HLADR", "CD27",
+                          "CD303", "CD68", "CD11b", "CD20", "CD56", "GranzymeB",
+                          "CD3", "LMAP3", "CD11c", "PD1", "GITR", "CD14", "PDL1", 
+                          "TCF7", "CD45", "FOXP3", "ICOS", "Ki67", "CD8", "Tim3",
+                          "IRF4", "VISTA", "CD1c", "CD4", "CD31", "CXCL12", "CCL21",
+                          "CXCL13", "DNA1", "DNA2", "CD15")
+
+# Store patient and image level information in elementMetadata
+mcols(images) <- DataFrame(image = names(images))
+
+cur <- lapply(names(images), function(x){
+    img <- images[[x]]
+    mat <- apply(img, 3, function(ch){
+        # Otsu threshold
+        thres <- otsu(ch, range = c(min(ch), max(ch)), levels = 65536)
+
+        snr <- mean(ch[ch > thres]) / mean(ch[ch <= thres])
+        ps <- mean(ch[ch > thres])
+        ts <- sum(ch[ch > thres])
+        
+        return(c(snr = snr, ps = ps, ts = ts))
+    })
+    t(mat) %>% as.data.frame() %>% 
+        mutate(image = x,
+               marker = colnames(mat)) %>% 
+        pivot_longer(cols = c(snr, ps, ts))
+})
+
+cur_snr <- do.call(rbind, cur)
+cur_snr$resolution <- c(rep("1000", 114), rep("200", 114), rep("300", 114), rep("500", 114))
+
+data <- cur_snr %>% 
+    pivot_wider(names_from = name, values_from = value) %>%
+    filter(ps > 2) %>%
+    pivot_longer(cols = c(snr, ps))
+
+data <- data %>% 
+    dplyr::group_by(marker, name, resolution) %>%
+    dplyr::summarize(log_mean = log2(mean(value))) %>%
+    pivot_wider(names_from = name, values_from = log_mean)
+
+markers <- data$marker[which(data$resolution == "300")]
+markers <- c("Vimentin", "CD4", "CD11b", "CD8", "FOXP3", "HLADR", "CD31", "CD20", "CD11c", "CD1c", "DNA2")
+
+
+input <- data[which(data$marker %in% markers),]
+input$resolution <- factor(input$resolution, levels = c("1000", "500", "300", "200"))
+  
+ggplot(input, aes(ps, snr)) +
+    geom_point(aes(ps, snr, col = resolution)) +
+    geom_label_repel(aes(ps, snr, label = marker, col = resolution)) +
+  scale_color_manual(values = c("#204a77", "#76669B", "#DD708E", "#F5B35E")) +
+    ylab("Signal-to-noise ratio [log2]") +
+    xlab("Signal intensity [log2]") +
+  xlim(c(0,9)) +
+  ylim(c(0.5,4.5)) +
+  #geom_encircle(data = subset(input, resolution == "1000"), color = NA, fill = alpha("#204a77", 0.1),
+                #s_shape = 0.5) +
+  #geom_encircle(data = subset(input, resolution == "500"), color = NA, fill = alpha("#76669B", 0.1),
+                #s_shape = 0.5) +
+  #geom_encircle(data = subset(input, resolution == "300"), color = NA, fill = alpha("#DD708E", 0.1),
+                #s_shape = 0.5) +
+  #geom_encircle(data = subset(input, resolution == "200"), color = NA, fill = alpha("#F5B35E", 0.1),
+                #s_shape = 0.5) +
+  theme(panel.grid = element_blank(),
+        panel.border = element_rect(color = "black", fill = NA, size = 1),
+        panel.background = element_rect(fill = "white")) 
+
+```
+
+
+
+
