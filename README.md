@@ -4,7 +4,7 @@
 
 This project stores details of both **PSF creation** and Richardson-Lucy **deconvolution** for high-resolution imaging mass cytometry (**HR-IMC**). 
 
-Additional scripts relating to HR-IMC's performance assessment and application will be shared upon request prior to publication. All code will be publicly shared upon publication.
+Additional scripts relating to HR-IMC's performance assessment and application are provided.
 
 
 
@@ -53,6 +53,10 @@ The test image contains a zoom-in of smooth muscle actin fibres captured with ou
 Expected Run Time: **less than a minute**
 
 *The same instructions apply to run this script on your own data set. Keep in mind that large datasets (~1000 images) can take several hours to run, depending on hardware capabilities. The iteration number can be altered to refine data (<20 recommended)*
+
+## Data availability
+Provided scripts are based on high-resolution imaging mass cytometry (HR-IMC) data available at Zenodo (https://doi.org/10.5281/zenodo.17077712).
+
 
 ## License information
 
