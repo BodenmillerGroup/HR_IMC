@@ -47,7 +47,7 @@ The test image contains a zoom-in of smooth muscle actin fibres captured with ou
    ```
 3. **Run the script**:
    ```sh
-   python HR_IMC_final_function.py
+   python HR_IMC_Deconvolution.py
    ```
 
 Expected Run Time: **less than a minute**
