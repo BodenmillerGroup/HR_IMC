@@ -9,7 +9,9 @@ Additional scripts relating to HR-IMC's performance assessment and application a
 
 
 ## Overview
-Here we provide a python script designed for processing high-resolution Imaging Mass Cytometry (IMC) data. It applies Richardson-Lucy deconvolution with a custom PSF to improve image resolution to 333 nm. The script takes oversampled multi-layer TIFF images as input, processes them layer by layer, and outputs the enhanced images. If the user has generated oversampled data for 500 nm resolution, this can be specified using the `resolution = 500` argument.
+Here we provide a python script designed for processing high-resolution Imaging Mass Cytometry (IMC) data. It applies Richardson-Lucy deconvolution with a custom PSF to improve image resolution to 333 nm. The script takes oversampled multi-layer TIFF images as input, processes them layer by layer, and outputs the enhanced images. Please note that there is no additional data processing step following the acquisition process. The input is the raw .tiff image extracted (typically via Steinbock) from the .mcd file produced at acquisition. 
+
+If the user has generated oversampled data for 500 nm resolution, this can be specified using the `resolution = 500` argument.
 
 ## System Requirements
 - **Operating System**: Linux or macOS (Windows may work but is untested)
