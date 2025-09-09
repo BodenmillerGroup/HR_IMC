@@ -8,7 +8,7 @@ from skimage.util import img_as_uint
 import cv2
 
 
-def RLD_HRIMC_circle(input_dir, output_dir, x0, iterations=4):
+def RLD_HRIMC_circle(input_dir, output_dir, x0, iterations):
     # Ensure the output directory exists
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -132,6 +132,7 @@ input_dir = "/mnt/central_nas/projects/Pladioc/SRIMC_project/IF/IMC_data/img_HPF
 output_dir = "/mnt/central_nas/projects/Pladioc/SRIMC_project/IF/IMC_data/processed/"
 
 # %%
-RLD_HRIMC_circle(input_dir, output_dir, x0 = 7)
+RLD_HRIMC_circle(input_dir, output_dir, x0 = 7, iterations = 4)
+
 
 
