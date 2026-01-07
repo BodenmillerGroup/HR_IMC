@@ -62,6 +62,11 @@ Provided scripts are based on high-resolution imaging mass cytometry (HR-IMC) da
 ## Alternative resolutions
 In this code, we only provide deconvolution strategies for 333 and 500 nm step sizes. In order to tailor the worflow to alternative resolutions, the laser scanning patterns need to be modelled in a vector-based graphics system or calculated in an computational grid-based simulation with a 2D circular kernal. Intersectional areas can be calculated and weighted PSFs formulated accordingly. 
 
+## Informational overview
+For more information, please consult our _Nature Methods_ publication: [High-resolution imaging mass cytometry to map subcellular structures](https://www.nature.com/articles/s41592-025-02889-8) 
+The following practical guidelines are outlined in Extended Data Figure 5:
+
+![See an overview here](https://media.springernature.com/full/springer-static/esm/art%3A10.1038%2Fs41592-025-02889-8/MediaObjects/41592_2025_2889_Fig9_ESM.jpg?as=webp)
 ## License information
 
 *MIT License  
